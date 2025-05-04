@@ -6,6 +6,8 @@ from openai import OpenAI
 from history_msg import create_pool, save_message
 import config
 
+
+
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
