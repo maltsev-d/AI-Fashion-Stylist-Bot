@@ -77,7 +77,7 @@ async def handle_message(message: Message):
         )
         reply = response.choices[0].message.content.strip()
 
-        # Выводим ответ бота в консол
+        # Выводим ответ бота в консоль
         print(f"Бот ответил: {reply}")
 
         await message.answer(reply)
