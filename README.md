@@ -18,8 +18,8 @@ AI-стилист на базе OpenAI GPT, который помогает по
 ### 1. Клонирование репозитория
 
 ```bash
-git clone https://github.com/yourusername/stylist_bot.git
-cd stylist_bot
+git clone https://github.com/maltsev-d/Stylist_bot.git
+cd Stylist_bot
 ```
 
 ### 2. Установка зависимостей
