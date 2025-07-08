@@ -2,14 +2,15 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from openai import OpenAI
-from history_msg import create_pool, save_message
+import aiohttp
+import os
+import tempfile
+# import openai
+from history_msg import create_pool, save_message, get_last_messages
 import config
 
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
-
-client = OpenAI(api_key=config.OPENAI_API_KEY)
 
 SYSTEM_PROMPT = (
     "Ты — дружелюбный, внимательный, экспертный стилист женской одежды. Помогаешь девушкам подбирать стильные образы, "
@@ -20,7 +21,7 @@ keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💃 Образ для свидания вечером летом")],
         [KeyboardButton(text="👗 Какую одежду выбрать для офиса летом?")],
-        [KeyboardButton(text="👜 Повседневная стильная одежда осени")],
+        [KeyboardButton(text="💼 Повседневная стильная одежда осени")],
     ],
     resize_keyboard=True
 )
@@ -32,7 +33,7 @@ async def cmd_start(message: Message):
     await message.answer(
         "🌸 Привет, красавица! Я — твой заботливый AI-стилист 💖\n"
         "Здесь, чтобы ты чувствовала себя уверенно и выглядела стильно каждый день ✨\n\n"
-        "👟 Помогу подобрать образы на каждый день — для прогулок, работы, встреч с друзьями и просто хорошего настроения ☕🧥\n"
+        "👟 Помогу подобрать образы на каждый день — для прогулок, работы, встреч с друзьями и просто хорошего настроения ☕🧵\n"
         "Всё должно быть удобно, красиво и по-настоящему твоё 💼👖\n\n"
         "Хочешь — опиши, что ищешь, и я подберу лучшее:\n"
         "– «Нужен образ на повседневку»\n"
@@ -45,7 +46,7 @@ async def cmd_start(message: Message):
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     await message.answer(
-        "🧾 Что я умею:\n"
+        "🧞️ Что я умею:\n"
         "— Помогу подобрать образ под любое событие\n"
         "— Учитываю сезон, стиль, тип фигуры\n"
         "— Расскажу про тренды и дам модные советы\n\n"
@@ -69,29 +70,90 @@ async def handle_message(message: Message, db_pool):
 
     print(f"Пользователь {user_id} спросил: {user_input}")
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_input}
-            ],
-            max_tokens=MAX_TOKENS
-        )
-        reply = response.choices[0].message.content.strip()
-        print(f"Бот ответил: {reply}")
+    if not config.GPT_ENABLED:
+        reply = "⏳ Прости, модный советчик сейчас немного занят. Возвращайся чуть позже!"
+        await save_message(db_pool, user_id, user_input, reply)
+        await message.answer(reply)
+        return
 
+    try:
+        context_messages = await get_last_messages(db_pool, user_id, limit=5)
+        context = []
+        for row in context_messages[::-1]:
+            context.append({"role": "user", "content": row["usermsg"]})
+            context.append({"role": "assistant", "content": row["botmsg"]})
+        context.append({"role": "user", "content": user_input})
+
+        # response = openai.ChatCompletion.create(
+        #     model="gpt-3.5-turbo",
+        #     messages=[{"role": "system", "content": SYSTEM_PROMPT}] + context,
+        #     max_tokens=MAX_TOKENS
+        # )
+        # reply = response.choices[0].message.content.strip()
+
+        reply = "🤷 Пока GPT выключен, но история сохраняется!"
         await save_message(db_pool, user_id, user_input, reply)
         await message.answer(reply)
 
     except Exception as e:
-        # Простой вывод ошибки
         error_text = str(e)
-        print(f"Ошибка API: {error_text}")
-
-        # Сохраняем в базе данных
+        print(f"Ошибка: {error_text}")
         await save_message(db_pool, user_id, user_input, error_text)
         await message.answer("😔 Ой, что-то пошло не так. Попробуй позже.")
+
+@dp.message(lambda message: message.voice is not None)
+async def voice_handler(message: Message):
+    user_id = message.from_user.id
+
+    if not config.STT_ENABLED:
+        reply = "🔇 Пока обработка голосовых сообщений временно недоступна. Напиши текстом, и я помогу с радостью!"
+        # Сохраняем факт голосового сообщения и ответ-заглушку
+        await save_message(db_pool, user_id, "[голосовое сообщение]", reply)
+        await message.answer(reply)
+        return
+
+    try:
+        file_info = await bot.get_file(message.voice.file_id)
+        file_path = file_info.file_path
+        file_url = f"https://api.telegram.org/file/bot{config.BOT_TOKEN}/{file_path}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as resp:
+                if resp.status == 200:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp:
+                        temp.write(await resp.read())
+                        temp_path = temp.name
+
+        import whisper
+        model = whisper.load_model("base")
+        result = model.transcribe(temp_path)
+        os.remove(temp_path)
+
+        transcript = result.get("text", "")
+
+        if not transcript:
+            await message.answer("🚫 Не удалось распознать речь. Попробуй ещё раз.")
+            return
+
+        # Сохраняем распознанный текст в базу
+        await save_message(db_pool, user_id, transcript, "[голосовое сообщение распознано]")
+
+        # Создаём фейковое текстовое сообщение с распознанным текстом
+        fake_message = types.Message(
+            message_id=message.message_id,
+            date=message.date,
+            chat=message.chat,
+            from_user=message.from_user,
+            message_thread_id=message.message_thread_id,
+            text=transcript
+        )
+
+        # Передаём распознанный текст в обработчик, где он будет отправлен в GPT и сохранён
+        await handle_message(fake_message, db_pool)
+
+    except Exception as e:
+        print(f"Ошибка STT: {e}")
+        await message.answer("😓 Не удалось обработать голосовое сообщение. Попробуй позже.")
 
 @dp.message()
 async def universal_handler(message: Message):

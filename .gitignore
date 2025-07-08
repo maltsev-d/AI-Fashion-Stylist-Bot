@@ -4,9 +4,6 @@ __pycache__/
 *.pyo
 *.pyd
 .env
-DB.py
-test.py
-
 # IDE
 .vscode/
 .idea/
