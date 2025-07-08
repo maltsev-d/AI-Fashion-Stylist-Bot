@@ -9,7 +9,11 @@ __pycache__/
 .idea/
 *.sublime-project
 *.sublime-workspace
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
+__pycache__/
+
+

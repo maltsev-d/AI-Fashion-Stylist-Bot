@@ -9,6 +9,11 @@ import tempfile
 from history_msg import create_pool, save_message, get_last_messages
 import config
 
+#Заглушка для Reender
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+#-------------------------------------------------
+
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
@@ -163,6 +168,25 @@ async def main():
     global db_pool
     db_pool = await create_pool()
     await dp.start_polling(bot)
+
+# --- Заглушка для Render, чтобы он видел порт ---
+def run_http():
+    import os
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    port = int(os.environ.get("PORT", 8000))  # Render подставляет PORT
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Stylist Bot is alive")
+
+    httpd = HTTPServer(('0.0.0.0', port), Handler)
+    httpd.serve_forever()
+
+import threading
+threading.Thread(target=run_http, daemon=True).start()
+# --------------------------------------------------
 
 if __name__ == "__main__":
     asyncio.run(main())
