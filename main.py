@@ -12,6 +12,7 @@ import config
 #Заглушка для Reender
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+import sys
 #-------------------------------------------------
 
 bot = Bot(token=config.BOT_TOKEN)
@@ -169,7 +170,7 @@ async def main():
     db_pool = await create_pool()
     await dp.start_polling(bot)
 
-# --- Заглушка для Render, чтобы он видел порт ---
+# --- Заглушка для Render, чтобы он видел порт --------------------------------------------------------
 def run_http():
     import os
     from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -186,7 +187,20 @@ def run_http():
 
 import threading
 threading.Thread(target=run_http, daemon=True).start()
-# --------------------------------------------------
+
+async def auto_restart(delay=1800):
+    await asyncio.sleep(delay)
+    print("[INFO] Время перезапуска!")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    global db_pool
+    db_pool = await create_pool()
+
+    asyncio.create_task(auto_restart())
+
+    await dp.start_polling(bot)
+# ---------------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     asyncio.run(main())
